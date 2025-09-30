@@ -1,178 +1,169 @@
+
 import React, { useState } from 'react';
-import { Week, PlanItem, Plan, WeekStatus } from '../types';
+import { Week, Plan, PlanItem } from '../types';
+import { supabase } from '../services/supabaseClient';
+import { FaChevronDown, FaChevronUp, FaEdit, FaTrash, FaPlus, FaBrain, FaCheckCircle, FaCalendarAlt } from 'react-icons/fa';
 import DayPlanView from './DayPlanView';
-import { FaEdit, FaTrash, FaChevronDown, FaChevronUp, FaPaperPlane, FaCheckCircle, FaExclamationCircle, FaUndo } from 'react-icons/fa';
-import { DAY_NAMES } from '../constants';
+import EditWeekModal from './EditWeekModal';
+import AddDayModal from './AddDayModal';
+import WeekStats from './WeekStats';
 
 interface WeekCardProps {
-    week: Week;
-    onEdit: () => void;
-    onDelete: () => void;
-    onUpdatePlan: (plan: Plan) => void;
-    onUpdateStatus: (status: WeekStatus) => void;
-    onAddTask: (week: Week, date: string) => void;
-    onEditTask: (item: PlanItem, week: Week, date: string) => void;
-    onDeleteTask: (week: Week, date: string, itemId: string) => void;
-    onDeleteDay: (week: Week, date: string) => void;
-    onSelectTask: (item: PlanItem, weekId: string) => void;
-    isAuditor: boolean;
+  week: Week;
+  isAuditor: boolean;
+  onUpdatePlan: (plan: Plan) => void;
+  onTaskSelect: (item: PlanItem) => void;
+  onDeleteRequest: () => void;
+  onGenerateReport: () => void;
 }
 
-const getStatusBadge = (status: WeekStatus) => {
-    switch (status) {
+const WeekCard: React.FC<WeekCardProps> = ({ week, isAuditor, onUpdatePlan, onTaskSelect, onDeleteRequest, onGenerateReport }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddDayModalOpen, setIsAddDayModalOpen] = useState(false);
+  const [rejectionComment, setRejectionComment] = useState(week.rejection_comment || '');
+
+  const handleStatusChange = async (newStatus: Week['status']) => {
+    let updateData: Partial<Week> = { status: newStatus };
+    if (newStatus === 'rejected') {
+        const comment = prompt("Пожалуйста, укажите причину отклонения:", rejectionComment);
+        if (comment === null) return; // User cancelled
+        updateData.rejection_comment = comment;
+        setRejectionComment(comment);
+    } else {
+        updateData.rejection_comment = null;
+    }
+
+    const { error } = await supabase.from('weeks').update(updateData).eq('id', week.id);
+    if (error) {
+      alert('Ошибка изменения статуса: ' + error.message);
+    }
+  };
+  
+  const statusConfig: { [key in Week['status']]: { label: string; color: string; } } = {
+    draft: { label: 'Черновик', color: 'bg-gray-200 text-gray-800' },
+    pending_approval: { label: 'Ожидает согласования', color: 'bg-yellow-200 text-yellow-800' },
+    approved: { label: 'Согласовано', color: 'bg-green-200 text-green-800' },
+    rejected: { label: 'Отклонено', color: 'bg-red-200 text-red-800' },
+    completed: { label: 'Завершен', color: 'bg-blue-200 text-blue-800' },
+  };
+  
+  // Fix: Use Object.keys with map to ensure proper type inference for day plans.
+  const allTasks = Object.keys(week.plan).flatMap(date => week.plan[date].tasks);
+  const totalTasks = allTasks.length;
+  const completedTasks = allTasks.filter(task => (task.event_count || 0) > 0).length;
+  const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  const getActionButtons = () => {
+    switch (week.status) {
         case 'draft':
-            return <span className="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-800">Черновик</span>;
+            return isAuditor && <button onClick={() => handleStatusChange('pending_approval')} className="btn-primary">Отправить на согласование</button>;
         case 'pending_approval':
-            return <span className="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full bg-yellow-100 text-yellow-800">На согласовании</span>;
+            return !isAuditor && (
+                <div className="flex gap-2">
+                    <button onClick={() => handleStatusChange('rejected')} className="btn-secondary bg-red-500 text-white hover:bg-red-600">Отклонить</button>
+                    <button onClick={() => handleStatusChange('approved')} className="btn-primary bg-green-600 hover:bg-green-700">Согласовать</button>
+                </div>
+            );
         case 'approved':
-            return <span className="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full bg-green-100 text-green-800">Утверждено</span>;
-        case 'changes_requested':
-            return <span className="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full bg-red-100 text-red-800">Требует доработки</span>;
-        case 'pending_changes_approval':
-            return <span className="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-800">Изменения на согласовании</span>;
+             return isAuditor && <button onClick={() => handleStatusChange('completed')} className="btn-primary flex items-center gap-2"><FaCheckCircle/> Завершить этап</button>;
+        case 'rejected':
+             return isAuditor && <button onClick={() => handleStatusChange('draft')} className="btn-secondary">Вернуть в черновик</button>;
+        case 'completed':
+             return isAuditor && <button onClick={onGenerateReport} className="btn-primary bg-indigo-600 hover:bg-indigo-700 flex items-center gap-2"><FaBrain/> Отчет с AI</button>;
+        default:
+            return null;
     }
-};
-
-const getDaysArray = (start: string, end: string): string[] => {
-    const arr = [];
-    if (!start || !end) return [];
-    try {
-        for (let dt = new Date(start); dt <= new Date(end); dt.setDate(dt.getDate() + 1)) {
-            arr.push(new Date(dt).toISOString().slice(0, 10));
-        }
-    } catch (e) {
-        console.error("Invalid date range for getDaysArray", start, end);
-        return [];
-    }
-    return arr;
-};
-
-const WeekCard: React.FC<WeekCardProps> = ({ week, onEdit, onDelete, onUpdatePlan, onUpdateStatus, onAddTask, onEditTask, onDeleteTask, onDeleteDay, onSelectTask, isAuditor }) => {
-    const [isExpanded, setIsExpanded] = useState(true);
-
-    const weekDays = week.start_date && week.end_date
-        ? getDaysArray(week.start_date, week.end_date)
-        : Object.keys(week.plan).sort();
-    
-    const canAuditorEditWeek = isAuditor && week.status !== 'approved';
-
-    const renderActionButtons = () => {
-        if (isAuditor) {
-            if (week.status === 'draft' || week.status === 'changes_requested') {
-                return (
-                    <button onClick={() => onUpdateStatus('pending_approval')} className="flex items-center text-sm bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600">
-                        <FaPaperPlane className="mr-2" />
-                        Отправить на согласование
-                    </button>
-                )
-            }
-            if (week.status === 'approved') {
-                 return (
-                    <button onClick={() => onUpdateStatus('pending_changes_approval')} className="flex items-center text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-lg hover:bg-yellow-600">
-                        <FaUndo className="mr-2" />
-                        Запросить изменения
-                    </button>
-                )
-            }
-        } else { // Owner view
-            if (week.status === 'pending_approval') {
-                return (
-                    <div className="flex items-center space-x-2">
-                        <button onClick={() => onUpdateStatus('changes_requested')} className="flex items-center text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-lg hover:bg-yellow-600">
-                             <FaExclamationCircle className="mr-2" />
-                            Запросить изменения
-                        </button>
-                        <button onClick={() => onUpdateStatus('approved')} className="flex items-center text-sm bg-green-500 text-white px-3 py-1.5 rounded-lg hover:bg-green-600">
-                            <FaCheckCircle className="mr-2" />
-                            Утвердить план
-                        </button>
-                    </div>
-                )
-            }
-            if (week.status === 'pending_changes_approval') {
-                return (
-                     <div className="flex items-center space-x-2">
-                        <button onClick={() => onUpdateStatus('approved')} className="flex items-center text-sm bg-green-500 text-white px-3 py-1.5 rounded-lg hover:bg-green-600">
-                            <FaCheckCircle className="mr-2" />
-                            Согласовать изменения
-                        </button>
-                    </div>
-                )
-            }
-        }
-        return null;
-    }
-    
-    const showChangesWarning = !isAuditor && week.status === 'pending_changes_approval';
-
-    return (
-        <div className={`bg-white rounded-lg shadow-md overflow-hidden transition-all ${showChangesWarning ? 'border-2 border-red-400' : ''}`}>
-            <header 
-                className="p-4 border-b border-gray-200 flex justify-between items-center"
-            >
-                <div className="flex items-center flex-wrap gap-y-2">
-                    <h2 className="text-xl font-bold text-gray-800 mr-4">{week.title}</h2>
-                    {getStatusBadge(week.status)}
-                    <div className="hidden md:block ml-auto md:ml-4"> {renderActionButtons()}</div>
-                </div>
-                <div className="flex items-center space-x-2">
-                    {canAuditorEditWeek && (
-                         <>
-                            <button onClick={onEdit} className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"><FaEdit /></button>
-                            <button onClick={onDelete} className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"><FaTrash /></button>
-                         </>
-                    )}
-                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-2 text-gray-500">
-                        {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
-                    </button>
-                </div>
-            </header>
-            <div className="md:hidden p-4 border-b border-gray-200">
-                 {renderActionButtons()}
+  }
+  
+  return (
+    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <header
+        className="p-4 cursor-pointer border-b"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex justify-between items-center mb-3">
+            <h2 className="text-xl font-bold text-gray-800 truncate pr-4">{week.title}</h2>
+            <div className="flex items-center gap-4">
+                 {isAuditor && week.status === 'draft' && (
+                     <>
+                        <button onClick={(e) => { e.stopPropagation(); setIsEditModalOpen(true); }} title="Редактировать этап" className="p-2 text-gray-500 hover:text-blue-600"><FaEdit /></button>
+                        <button onClick={(e) => { e.stopPropagation(); onDeleteRequest(); }} title="Удалить этап" className="p-2 text-gray-500 hover:text-red-600"><FaTrash /></button>
+                     </>
+                 )}
+                <button className="p-2">
+                    {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                </button>
             </div>
-            
-            {showChangesWarning && (
-                 <div className="p-3 bg-red-50 text-red-700 text-sm">
-                    <p><b>Внимание:</b> Аудитор внес изменения в ранее согласованный план и ожидает вашего повторного утверждения.</p>
-                </div>
-            )}
-
-            {isExpanded && (
-                <div className="p-4">
-                    {weekDays.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {weekDays.map(date => {
-                                const dayDate = new Date(date + 'T00:00:00');
-                                const dayIndex = dayDate.getDay();
-                                const dayName = DAY_NAMES[dayIndex === 0 ? 6 : dayIndex - 1];
-
-                                return (
-                                    <DayPlanView
-                                        key={date}
-                                        date={date}
-                                        dayName={dayName}
-                                        dayPlan={week.plan[date] || { tasks: [] }}
-                                        week={week}
-                                        onUpdatePlan={onUpdatePlan}
-                                        onAddTask={onAddTask}
-                                        onEditTask={onEditTask}
-                                        onDeleteTask={onDeleteTask}
-                                        onDeleteDay={onDeleteDay}
-                                        onSelectTask={(item, weekId) => onSelectTask(item, weekId)}
-                                        isAuditor={isAuditor}
-                                    />
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <p className="text-center py-4 text-gray-500">
-                            {isAuditor && week.status !== 'approved' ? "В этом этапе пока нет дней. Отредактируйте этап, чтобы задать период." : "План для этого этапа еще не составлен."}
-                        </p>
-                    )}
-                </div>
-            )}
         </div>
-    );
+        <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+           <div className="flex items-center gap-2">
+                <FaCalendarAlt/>
+                <span>{new Date(week.start_date + 'T00:00:00').toLocaleDateString()} - {new Date(week.end_date + 'T00:00:00').toLocaleDateString()}</span>
+           </div>
+            <span className={`px-3 py-1 font-semibold rounded-full ${statusConfig[week.status].color}`}>
+                {statusConfig[week.status].label}
+            </span>
+        </div>
+        <div>
+             <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+            </div>
+        </div>
+      </header>
+
+      {isExpanded && (
+        <div className="p-4">
+            {week.rejection_comment && week.status === 'rejected' && (
+                <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 text-red-800">
+                    <p className="font-bold">Причина отклонения:</p>
+                    <p>{week.rejection_comment}</p>
+                </div>
+            )}
+            
+            <DayPlanView 
+                week={week}
+                onUpdatePlan={onUpdatePlan}
+                onTaskSelect={onTaskSelect}
+                isAuditor={isAuditor}
+            />
+            
+            <div className="mt-4 pt-4 border-t flex justify-between items-center flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                    {getActionButtons()}
+                </div>
+                {isAuditor && (week.status === 'draft' || week.status === 'approved') && (
+                     <button onClick={() => setIsAddDayModalOpen(true)} className="flex items-center text-sm btn-secondary">
+                        <FaPlus className="mr-2"/> Добавить день
+                    </button>
+                )}
+            </div>
+
+            <div className="mt-4">
+                <WeekStats week={week} />
+            </div>
+
+        </div>
+      )}
+
+      {isAuditor && (
+          <>
+            <EditWeekModal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                week={week}
+            />
+            <AddDayModal
+                isOpen={isAddDayModalOpen}
+                onClose={() => setIsAddDayModalOpen(false)}
+                week={week}
+                onUpdatePlan={onUpdatePlan}
+            />
+          </>
+      )}
+
+    </div>
+  );
 };
 
 export default WeekCard;

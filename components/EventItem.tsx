@@ -1,13 +1,12 @@
-
 import React from 'react';
 import { Event } from '../types';
-import { FaRegComment, FaVideo, FaFileAlt, FaMicrophone, FaReply, FaUserFriends, FaClock } from 'react-icons/fa';
+import { FaRegComment, FaVideo, FaFileAlt, FaMicrophone, FaReply, FaUserFriends, FaClock, FaTrash } from 'react-icons/fa';
 
 interface EventItemProps {
   event: Event;
   onReply: (event: Event) => void;
   onQuoteClick: (eventId: string) => void;
-  isLoggedIn: boolean;
+  onDelete?: () => void;
 }
 
 const getEventTypeIcon = (type: Event['type']) => {
@@ -29,7 +28,6 @@ const renderAttachments = (files: { name: string, url: string, type?: string }[]
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {files.map(file => {
                 const fileType = file.type || '';
-                // Простая проверка расширений для надежности, если MIME-тип отсутствует
                 const isImage = fileType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
                 const isAudio = fileType.startsWith('audio/');
                 const isVideo = fileType.startsWith('video/');
@@ -68,18 +66,16 @@ const renderAttachments = (files: { name: string, url: string, type?: string }[]
 };
 
 
-const EventItem: React.FC<EventItemProps> = ({ event, onReply, onQuoteClick, isLoggedIn }) => {
+const EventItem: React.FC<EventItemProps> = ({ event, onReply, onQuoteClick, onDelete }) => {
     
     const renderEventDetails = () => {
         const eventData = event.data;
         if (!eventData) return null;
 
-        // Универсальный обработчик для всех типов событий, у которых могут быть файлы
         if (eventData.file_urls && eventData.file_urls.length > 0) {
              return renderAttachments(eventData.file_urls);
         }
 
-        // Специализированная логика для встреч без файлов
         if (event.type === 'meeting') {
             return (
                 <div className="mt-2 space-y-2 text-sm">
@@ -130,20 +126,22 @@ const EventItem: React.FC<EventItemProps> = ({ event, onReply, onQuoteClick, isL
                      </div>
                 )}
 
-                {/* Отображаем текст, только если он есть */}
                 {event.content && (
                     <div className="mt-2 text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: event.content?.replace(/\n/g, '<br />') }} />
                 )}
                 
                 {renderEventDetails()}
 
-                {isLoggedIn && (
-                    <div className="mt-2">
-                        <button onClick={() => onReply(event)} className="flex items-center text-xs text-gray-500 hover:text-blue-600 font-medium">
-                            <FaReply className="mr-1.5" /> Ответить
+                <div className="mt-2 flex items-center space-x-4">
+                    <button onClick={() => onReply(event)} className="flex items-center text-xs text-gray-500 hover:text-blue-600 font-medium">
+                        <FaReply className="mr-1.5" /> Ответить
+                    </button>
+                    {onDelete && (
+                        <button onClick={onDelete} className="flex items-center text-xs text-gray-500 hover:text-red-600 font-medium">
+                            <FaTrash className="mr-1.5" /> Удалить
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
         </div>
     );

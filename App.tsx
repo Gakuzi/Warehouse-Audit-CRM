@@ -1,12 +1,15 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
 import { User } from '@supabase/supabase-js';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
+// Fix: Use relative path for component import.
 import AuditView from './components/AuditView';
 import LoginModal from './components/LoginModal';
 import ProfileModal from './components/ProfileModal';
+// Fix: Use relative path for type import.
 import { Project } from './types';
 
 function App() {

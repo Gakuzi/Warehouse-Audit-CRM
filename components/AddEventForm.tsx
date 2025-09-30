@@ -4,7 +4,7 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
 import { Spinner } from './ui/Spinner';
 import { Event } from '../types';
-import { FaTimes, FaPaperclip } from 'react-icons/fa';
+import { FaTimes, FaPaperclip, FaVideo, FaMicrophone, FaFileAlt } from 'react-icons/fa';
 import AddAttachmentModal from './AddAttachmentModal';
 
 interface AddEventFormProps {
@@ -13,9 +13,11 @@ interface AddEventFormProps {
   quotedEvent: Event | null;
   onClearQuote: () => void;
   onNewEvent: (event: Event) => void;
+  // Fix: Made onAddStructuredEvent optional to support simpler use cases.
+  onAddStructuredEvent?: () => void; // Callback to open the main event modal
 }
 
-const AddEventForm: React.FC<AddEventFormProps> = ({ user, context, quotedEvent, onClearQuote, onNewEvent }) => {
+const AddEventForm: React.FC<AddEventFormProps> = ({ user, context, quotedEvent, onClearQuote, onNewEvent, onAddStructuredEvent }) => {
     const [content, setContent] = useState('');
     const [loading, setLoading] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -84,7 +86,7 @@ const AddEventForm: React.FC<AddEventFormProps> = ({ user, context, quotedEvent,
     };
 
     return (
-        <div>
+        <div className="bg-white p-3 rounded-lg border">
              {quotedEvent && (
                 <div className="p-2 mb-2 bg-gray-100 rounded-md text-sm relative">
                     <p className="font-semibold text-gray-700">Ответ на сообщение от {quotedEvent.author_email}:</p>
@@ -99,7 +101,7 @@ const AddEventForm: React.FC<AddEventFormProps> = ({ user, context, quotedEvent,
                     ref={textareaRef}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border-0 focus:ring-0 resize-none"
                     rows={3}
                     placeholder="Напишите комментарий..."
                     disabled={loading}
@@ -114,16 +116,51 @@ const AddEventForm: React.FC<AddEventFormProps> = ({ user, context, quotedEvent,
                         </div>
                     ))}
                 </div>
-                <div className="mt-2 flex justify-between items-center">
-                    <button
-                        type="button"
-                        onClick={() => setIsAttachmentModalOpen(true)}
-                        className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
-                        title="Прикрепить файлы"
-                        disabled={loading}
-                    >
-                        <FaPaperclip size={18} />
-                    </button>
+                <div className="mt-2 pt-2 border-t flex justify-between items-center">
+                    <div className="flex items-center space-x-1">
+                        <button
+                            type="button"
+                            onClick={() => setIsAttachmentModalOpen(true)}
+                            className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                            title="Прикрепить файлы"
+                            disabled={loading}
+                        >
+                            <FaPaperclip size={18} />
+                        </button>
+                        {/* Fix: Conditionally render structured event buttons. */}
+                        {onAddStructuredEvent && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onAddStructuredEvent}
+                                    className="p-2 text-gray-500 hover:text-purple-600 rounded-full hover:bg-gray-100"
+                                    title="Запланировать встречу"
+                                    disabled={loading}
+                                >
+                                    <FaVideo size={18} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onAddStructuredEvent}
+                                    className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
+                                    title="Записать интервью"
+                                    disabled={loading}
+                                >
+                                    <FaMicrophone size={18} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onAddStructuredEvent}
+                                    className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                                    title="Анализ документов"
+                                    disabled={loading}
+                                >
+                                    <FaFileAlt size={18} />
+                                </button>
+                            </>
+                        )}
+                    </div>
+
                     <button
                         type="submit"
                         disabled={loading || (!content.trim() && filesToAttach.length === 0)}

@@ -1,17 +1,31 @@
 
 import React, { useState } from 'react';
 import Modal from './ui/Modal';
+import { Plan } from '../types';
 
 interface AddWeekModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddWeek: (title: string, startDate: string, endDate: string) => void;
+  onAddWeek: (title: string, startDate: string, endDate: string, plan: Plan) => void;
 }
 
 const AddWeekModal: React.FC<AddWeekModalProps> = ({ isOpen, onClose, onAddWeek }) => {
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
+
+  const generatePlanForDateRange = (start: string, end: string): Plan => {
+      const plan: Plan = {};
+      const currentDate = new Date(start + 'T00:00:00');
+      const finalDate = new Date(end + 'T00:00:00');
+
+      while(currentDate <= finalDate) {
+          const dateString = currentDate.toISOString().split('T')[0];
+          plan[dateString] = { tasks: [] };
+          currentDate.setDate(currentDate.getDate() + 1);
+      }
+      return plan;
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +34,8 @@ const AddWeekModal: React.FC<AddWeekModalProps> = ({ isOpen, onClose, onAddWeek 
         alert("Дата окончания не может быть раньше даты начала.");
         return;
       }
-      onAddWeek(title.trim(), startDate, endDate);
+      const newPlan = generatePlanForDateRange(startDate, endDate);
+      onAddWeek(title.trim(), startDate, endDate, newPlan);
       handleClose();
     }
   };
@@ -73,6 +88,7 @@ const AddWeekModal: React.FC<AddWeekModalProps> = ({ isOpen, onClose, onAddWeek 
                  />
             </div>
         </div>
+        <p className="text-xs text-gray-500">План будет автоматически заполнен днями из выбранного диапазона.</p>
         <div className="mt-4 flex justify-end space-x-2">
           <button type="button" onClick={handleClose} className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">
             Отмена

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
@@ -5,9 +6,10 @@ import { Event, PlanItem } from '../types';
 import EventItem from './EventItem';
 import AddEventForm from './AddEventForm';
 import { Spinner } from './ui/Spinner';
-import { FaTimes, FaPlus } from 'react-icons/fa';
+import { FaTimes } from 'react-icons/fa';
 import AddEventModal from './AddEventModal';
 import InterviewActionBar from './InterviewActionBar';
+import ConfirmationModal from './ConfirmationModal';
 
 
 interface TaskDetailViewProps {
@@ -15,19 +17,21 @@ interface TaskDetailViewProps {
   onClose: () => void;
   user: User | null;
   context: { item: PlanItem; weekId: string; projectId: string; };
+  onEventCountChange: (weekId: string, taskId: string, change: 1 | -1) => void;
 }
 
-const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, context }) => {
+const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, context, onEventCountChange }) => {
     const [events, setEvents] = useState<Event[]>([]);
     const [loading, setLoading] = useState(true);
     const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
     const [quotedEvent, setQuotedEvent] = useState<Event | null>(null);
     const mainRef = useRef<HTMLElement>(null);
+    const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
 
 
-    const fetchEvents = useCallback(async () => {
+    const fetchEvents = useCallback(async (showLoading = true) => {
         if (!context) return;
-        setLoading(true);
+        if (showLoading) setLoading(true);
         const { data, error } = await supabase
             .from('events')
             .select('*, parent:events!parent_event_id(content, author_email)')
@@ -39,7 +43,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, 
         } else {
             setEvents(data || []);
         }
-        setLoading(false);
+        if (showLoading) setLoading(false);
     }, [context]);
 
     useEffect(() => {
@@ -50,32 +54,53 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, 
 
     const handleNewEvent = (newEvent: Event) => {
         setEvents(currentEvents => {
-            // Optimistic update: add if not already present from subscription
             if (!currentEvents.some(e => e.id === newEvent.id)) {
+                 onEventCountChange(context.weekId, context.item.id, 1);
                 return [...currentEvents, newEvent];
             }
             return currentEvents;
         });
     };
 
+    const handleDeleteEvent = async () => {
+        if (!eventToDelete) return;
+        const eventIdToDelete = eventToDelete.id;
+
+        const { error } = await supabase.from('events').delete().eq('id', eventIdToDelete);
+
+        if (error) {
+            alert('Ошибка удаления события: ' + error.message);
+        } else {
+             setEvents(currentEvents => currentEvents.filter(e => e.id !== eventIdToDelete));
+             onEventCountChange(context.weekId, context.item.id, -1);
+             setEventToDelete(null);
+        }
+    };
+
     useEffect(() => {
         if (!context) return;
         
-        const subscription = supabase.channel(`public:events:task_id=eq.${context.item.id}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events', filter: `task_id=eq.${context.item.id}` }, 
+        const channel = supabase.channel(`public:events:task_id=eq.${context.item.id}`);
+        
+        channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events', filter: `task_id=eq.${context.item.id}` }, 
             (payload) => {
                  setEvents(currentEvents => {
-                    // Prevent duplicates from optimistic update
                     if (!currentEvents.some(e => e.id === payload.new.id)) {
+                        // We don't call onEventCountChange here to avoid double counting from local add
                         return [...currentEvents, payload.new as Event];
                     }
                     return currentEvents;
                 });
             })
-            .subscribe();
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'events', filter: `task_id=eq.${context.item.id}` },
+            (payload) => {
+                 setEvents(currentEvents => currentEvents.filter(e => e.id !== payload.old.id));
+                 // We don't call onEventCountChange here to avoid double counting from local delete
+            })
+        .subscribe();
 
         return () => {
-            supabase.removeChannel(subscription);
+            supabase.removeChannel(channel);
         };
     }, [context]);
     
@@ -134,7 +159,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, 
                                         event={event} 
                                         onReply={setQuotedEvent}
                                         onQuoteClick={handleQuoteClick}
-                                        isLoggedIn={!!user}
+                                        onDelete={user?.id === event.user_id ? () => setEventToDelete(event) : undefined}
                                     />
                                 ))}
                             </div>
@@ -147,24 +172,15 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, 
                 {/* Footer / Input */}
                 <footer className="p-4 bg-gray-50 border-t">
                     {user ? (
-                        <div className="flex items-start space-x-3">
-                             <button 
-                                onClick={() => setIsAddEventModalOpen(true)}
-                                className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-transform transform hover:scale-110"
-                                title="Добавить событие"
-                             >
-                                <FaPlus />
-                            </button>
-                            <div className="flex-1">
-                                <AddEventForm 
-                                    user={user} 
-                                    context={{ weekId: context.weekId, taskId: context.item.id, projectId: context.projectId }} 
-                                    quotedEvent={quotedEvent}
-                                    onClearQuote={() => setQuotedEvent(null)}
-                                    onNewEvent={handleNewEvent}
-                                />
-                            </div>
-                        </div>
+                         <AddEventForm 
+                            user={user} 
+                            context={{ weekId: context.weekId, taskId: context.item.id, projectId: context.projectId }} 
+                            quotedEvent={quotedEvent}
+                            onClearQuote={() => setQuotedEvent(null)}
+                            onNewEvent={handleNewEvent}
+                            // Fix: Added the missing onAddStructuredEvent prop to open the AddEventModal.
+                            onAddStructuredEvent={() => setIsAddEventModalOpen(true)}
+                        />
                     ) : (
                         <p className="text-sm text-center text-gray-500">Войдите, чтобы участвовать в обсуждении.</p>
                     )}
@@ -180,6 +196,13 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, 
                     onNewEvent={handleNewEvent}
                 />
             )}
+            <ConfirmationModal
+                isOpen={!!eventToDelete}
+                onClose={() => setEventToDelete(null)}
+                onConfirm={handleDeleteEvent}
+                title="Удалить событие?"
+                message={`Вы уверены, что хотите удалить это событие? Действие необратимо.`}
+            />
         </div>
     );
 };

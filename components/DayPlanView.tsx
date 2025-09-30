@@ -1,67 +1,135 @@
-import React from 'react';
-import { DayPlan, Week, PlanItem, Plan } from '../types';
-import PlanItemCard from './PlanItemCard';
+
+import React, { useState } from 'react';
+import { Week, Plan, PlanItem } from '../types';
 import { FaPlus, FaTrash } from 'react-icons/fa';
+import { DAY_NAMES } from '../constants';
+import AddPlanItemModal from './AddPlanItemModal';
+import PlanItemCard from './PlanItemCard';
+import ConfirmationModal from './ConfirmationModal';
+import EditPlanItemModal from './EditPlanItemModal';
 
 interface DayPlanViewProps {
-    date: string;
-    dayName: string;
-    dayPlan: DayPlan;
     week: Week;
     onUpdatePlan: (plan: Plan) => void;
-    onAddTask: (week: Week, date: string) => void;
-    onEditTask: (item: PlanItem, week: Week, date: string) => void;
-    onDeleteTask: (week: Week, date: string, itemId: string) => void;
-    onDeleteDay: (week: Week, date: string) => void;
-    onSelectTask: (item: PlanItem, weekId: string) => void;
+    onTaskSelect: (item: PlanItem) => void;
     isAuditor: boolean;
 }
 
-const DayPlanView: React.FC<DayPlanViewProps> = ({ date, dayName, dayPlan, week, onUpdatePlan, onAddTask, onEditTask, onDeleteTask, onDeleteDay, onSelectTask, isAuditor }) => {
+const DayPlanView: React.FC<DayPlanViewProps> = ({ week, onUpdatePlan, onTaskSelect, isAuditor }) => {
+    const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+    const [selectedDate, setSelectedDate] = useState('');
+    const [itemToEdit, setItemToEdit] = useState<PlanItem | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<{ date: string; item: PlanItem } | null>(null);
     
-    // Auditor can add new items to any plan except one pending approval from the owner.
-    const canAuditorAddItem = isAuditor && week.status !== 'pending_approval';
-    
-    // Auditor can only edit/delete items if the week has not been approved yet.
-    const canAuditorEditItem = isAuditor && week.status !== 'approved' && week.status !== 'pending_changes_approval';
+    // Determine if the plan can be modified (add, edit, delete tasks)
+    const canEditPlan = isAuditor && week.status === 'draft';
+    // Determine if new tasks can be added (e.g., in draft or approved states)
+    const canAddTask = isAuditor && (week.status === 'draft' || week.status === 'approved');
 
+
+    const handleAddTaskClick = (date: string) => {
+        setSelectedDate(date);
+        setIsAddItemModalOpen(true);
+    };
+
+    const handleDeleteDay = (date: string) => {
+        if (window.confirm(`Вы уверены, что хотите удалить ${date} и все задачи в этот день?`)) {
+            const newPlan = { ...week.plan };
+            delete newPlan[date];
+            onUpdatePlan(newPlan);
+        }
+    }
+    
+    const handleUpdateItem = (updatedItem: PlanItem) => {
+        const newPlan = { ...week.plan };
+        let found = false;
+        for (const date in newPlan) {
+            const day = newPlan[date];
+            const itemIndex = day.tasks.findIndex(t => t.id === updatedItem.id);
+            if (itemIndex > -1) {
+                day.tasks[itemIndex] = updatedItem;
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            onUpdatePlan(newPlan);
+        }
+        setItemToEdit(null);
+    }
+    
+    const handleDeleteItem = () => {
+        if (!itemToDelete) return;
+        const { date, item } = itemToDelete;
+        const newPlan = { ...week.plan };
+        newPlan[date].tasks = newPlan[date].tasks.filter(t => t.id !== item.id);
+        onUpdatePlan(newPlan);
+        setItemToDelete(null);
+    }
+
+    const sortedDates = Object.keys(week.plan).sort();
 
     return (
-        <div className="bg-gray-50 rounded-lg p-3 flex flex-col h-full min-h-[150px]">
-            <div className="flex justify-between items-start mb-2">
-                <div>
-                    <p className="font-semibold text-gray-800">{dayName}</p>
-                    <p className="text-xs text-gray-500">{new Date(date + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p>
-                </div>
-                {canAuditorEditItem && (
-                    <button onClick={() => onDeleteDay(week, date)} className="text-gray-400 hover:text-red-500 p-1 rounded-full hover:bg-red-100" title="Удалить день">
-                        <FaTrash size={12} />
-                    </button>
-                )}
-            </div>
-            <div className="space-y-2 flex-grow">
-                {dayPlan?.tasks?.length > 0 ? (
-                    dayPlan.tasks.map(item => (
-                        <PlanItemCard
-                            key={item.id}
-                            item={item}
-                            onSelect={() => onSelectTask(item, week.id)}
-                            onEdit={canAuditorEditItem ? () => onEditTask(item, week, date) : undefined}
-                            onDelete={canAuditorEditItem ? () => onDeleteTask(week, date, item.id) : undefined}
-                        />
-                    ))
-                ) : (
-                    <p className="text-sm text-gray-400 italic pt-2">Событий на этот день нет.</p>
-                )}
-            </div>
-             {canAuditorAddItem && (
-                <button 
-                    onClick={() => onAddTask(week, date)}
-                    className="mt-2 w-full text-sm text-blue-600 hover:bg-blue-100 rounded p-2 flex items-center justify-center"
-                >
-                    <FaPlus className="mr-2" size={12}/> Добавить событие
-                </button>
-             )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sortedDates.map(date => {
+                const dayPlan = week.plan[date];
+                const dayDate = new Date(date + 'T00:00:00');
+                const dayName = DAY_NAMES[dayDate.getDay()];
+                
+                return (
+                    <div key={date} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex justify-between items-center mb-3">
+                            <div>
+                                <h4 className="font-bold">{dayName}</h4>
+                                <p className="text-sm text-gray-500">{dayDate.toLocaleDateString('ru-RU')}</p>
+                            </div>
+                            {canEditPlan && (
+                                <button onClick={() => handleDeleteDay(date)} className="p-1 text-gray-400 hover:text-red-500"><FaTrash size={12}/></button>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            {dayPlan.tasks.map(item => (
+                                <PlanItemCard 
+                                    key={item.id} 
+                                    item={item} 
+                                    onSelect={() => onTaskSelect(item)}
+                                    onEdit={canEditPlan ? () => setItemToEdit(item) : undefined}
+                                    onDelete={canEditPlan ? () => setItemToDelete({ date, item }) : undefined}
+                                />
+                            ))}
+                            {canAddTask && (
+                                <button onClick={() => handleAddTaskClick(date)} className="w-full text-sm flex items-center justify-center p-2 border-2 border-dashed rounded-md text-gray-500 hover:bg-gray-100 hover:border-gray-400">
+                                    <FaPlus className="mr-2" size={12}/> Добавить
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+             {isAddItemModalOpen && (
+                <AddPlanItemModal
+                    isOpen={isAddItemModalOpen}
+                    onClose={() => setIsAddItemModalOpen(false)}
+                    onUpdatePlan={onUpdatePlan}
+                    week={week}
+                    date={selectedDate}
+                />
+            )}
+            {itemToEdit && (
+                <EditPlanItemModal 
+                    isOpen={!!itemToEdit}
+                    onClose={() => setItemToEdit(null)}
+                    item={itemToEdit}
+                    onUpdateItem={handleUpdateItem}
+                />
+            )}
+             <ConfirmationModal 
+                isOpen={!!itemToDelete}
+                onClose={() => setItemToDelete(null)}
+                onConfirm={handleDeleteItem}
+                title="Удалить задачу?"
+                message="Вы уверены, что хотите удалить эту задачу из плана?"
+             />
         </div>
     );
 };

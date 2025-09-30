@@ -1,7 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import Modal from './ui/Modal';
+// Fix: Use relative path for type import.
 import { Project, ApprovalPeriod } from '../types';
 import { supabase } from '../services/supabaseClient';
+// Fix: Use relative path for service import.
 import { generateAuditPlan } from '../services/geminiService';
 import { Spinner } from './ui/Spinner';
 

@@ -8,7 +8,8 @@ import { Spinner } from './ui/Spinner';
 interface AddMeetingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  context: { weekId: string; taskId: string; taskContent: string; };
+  // Fix: Added projectId to the context to ensure it can be saved with the event.
+  context: { weekId: string; taskId: string; taskContent: string; projectId: string; };
   user: User | null;
 }
 
@@ -21,7 +22,9 @@ const AddMeetingModal: React.FC<AddMeetingModalProps> = ({ isOpen, onClose, cont
         if (!content.trim() || !user) return;
         setLoading(true);
 
+        // Fix: Added project_id to the insert statement to ensure data integrity.
         const { error } = await supabase.from('events').insert({
+            project_id: context.projectId,
             week_id: context.weekId,
             task_id: context.taskId,
             user_id: user.id,
