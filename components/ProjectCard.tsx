@@ -1,6 +1,7 @@
 import React from 'react';
 import { Project } from '../types';
 import { FaTrash, FaCalendarAlt } from 'react-icons/fa';
+import ReactMarkdown from 'react-markdown';
 
 interface ProjectCardProps {
   project: Project;
@@ -23,7 +24,9 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect, onDelete }
     <div className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col">
       <div className="p-6 flex-grow cursor-pointer" onClick={() => onSelect(project)}>
         <h3 className="text-lg font-bold text-gray-800 mb-2 truncate">{project.name}</h3>
-        <p className="text-gray-600 text-sm line-clamp-3 mb-4">{project.description || "Нет описания."}</p>
+        <div className="text-gray-600 text-sm line-clamp-3 mb-4 prose prose-sm max-w-none">
+          <ReactMarkdown>{project.description || "Нет описания."}</ReactMarkdown>
+        </div>
         <div className="flex items-center text-xs text-gray-500">
           <FaCalendarAlt className="mr-2" />
           <span>{formatDate(project.start_date)}</span>

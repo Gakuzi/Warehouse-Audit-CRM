@@ -1,4 +1,4 @@
-
+// Fix: Removed self-import of 'ApprovalPeriod' that conflicted with the type definition below.
 export type ApprovalPeriod = 'weekly' | 'monthly';
 
 export interface Project {
@@ -42,6 +42,7 @@ export interface Week {
   project_id: string;
   user_id: string;
   title: string;
+  description?: string;
   plan: Plan;
   status: WeekStatus;
   start_date: string;
@@ -80,5 +81,22 @@ export interface Profile {
   telegram: string;
   telegram_bot_token: string;
   telegram_chat_id: string;
+  updated_at: string;
+}
+
+export interface ContactPerson {
+  id: string; // client-side UUID
+  name: string;
+  role: string;
+  email: string;
+  phone: string;
+}
+
+export interface CompanyProfile {
+  id: string;
+  project_id: string;
+  company_name: string;
+  address: string;
+  contacts: ContactPerson[]; // JSONB
   updated_at: string;
 }

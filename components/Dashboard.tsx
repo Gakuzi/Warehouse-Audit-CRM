@@ -30,7 +30,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onSelectProject }) => {
             .order('created_at', { ascending: false });
         
         if (error) {
-            console.error('Ошибка при загрузке проектов', error);
+            console.error('Ошибка при загрузке проектов:', error.message);
         } else {
             setProjects(data || []);
         }

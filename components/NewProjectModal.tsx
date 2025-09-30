@@ -23,6 +23,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, user
   const [endDate, setEndDate] = useState('');
   const [approvalPeriod, setApprovalPeriod] = useState<ApprovalPeriod>('weekly');
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,9 +46,11 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, user
         const durationInWeeks = Math.ceil(durationInDays / 7);
 
         // 1. Generate plan with AI
-        const generatedData = await generateAuditPlan(name, description, startDate, endDate, durationInWeeks, approvalPeriod);
+        setStatusText('Генерация плана аудита с помощью AI...');
+        const generatedData = await generateAuditPlan(name, description, startDate, endDate || end.toISOString().split('T')[0], durationInWeeks, approvalPeriod);
 
         // 2. Insert project into Supabase
+        setStatusText('Сохранение проекта...');
         const { data: projectData, error: projectError } = await supabase
             .from('projects')
             .insert({
@@ -64,10 +67,12 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, user
         if (projectError) throw projectError;
 
         // 3. Insert weeks for the new project
+        setStatusText('Сохранение этапов и задач...');
         const weeksToInsert = generatedData.weeks.map((week: any) => ({
             project_id: projectData.id,
             user_id: user.id,
             title: week.title,
+            description: week.description, // Added description
             plan: week.plan,
             status: 'draft',
             start_date: week.start_date,
@@ -87,6 +92,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, user
       setError('Ошибка при создании проекта: ' + err.message);
     } finally {
       setLoading(false);
+      setStatusText('');
     }
   };
   
@@ -98,6 +104,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, user
       setApprovalPeriod('weekly');
       setError('');
       setLoading(false);
+      setStatusText('');
       onClose();
   }
 
@@ -105,6 +112,12 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, user
     <Modal isOpen={isOpen} onClose={handleClose} title="Создать новый план аудита">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <p className="text-red-600 bg-red-100 p-3 rounded-md text-sm">{error}</p>}
+        {loading && (
+            <div className="text-center p-4 bg-blue-50 text-blue-700 rounded-md flex items-center justify-center gap-3">
+                <Spinner size="sm" />
+                <p className="text-sm font-medium">{statusText}</p>
+            </div>
+        )}
         <div>
           <label htmlFor="projectName" className="block text-sm font-medium text-gray-700">Название проекта</label>
           <input id="projectName" type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full mt-1 input" placeholder="Например, 'Аудит финансовой отчетности ООО Ромашка'" required disabled={loading}/>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { User } from '@supabase/supabase-js';
 import { Project, Week, Plan, PlanItem } from '../types';
@@ -17,9 +16,10 @@ interface AuditViewProps {
   project: Project;
   user: User | null;
   onBack: () => void;
+  isAuditor: boolean;
 }
 
-const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
+const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack, isAuditor }) => {
   const [weeks, setWeeks] = useState<Week[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -32,15 +32,13 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
   
   const [weekToDelete, setWeekToDelete] = useState<Week | null>(null);
 
-  const isAuditor = user?.id === project.user_id;
-
   const fetchWeeks = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     const { data, error } = await supabase
       .from('weeks')
       .select('*')
       .eq('project_id', project.id)
-      .order('created_at', { ascending: true });
+      .order('start_date', { ascending: true });
 
     if (error) {
       console.error('Error fetching weeks:', error);
@@ -53,7 +51,8 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
   useEffect(() => {
     fetchWeeks();
   }, [fetchWeeks]);
-
+  
+  // This subscription is a fallback and ensures eventual consistency
   useEffect(() => {
     const subscription = supabase.channel(`public:weeks:project_id=eq.${project.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'weeks', filter: `project_id=eq.${project.id}` }, 
@@ -70,6 +69,8 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
     const { error } = await supabase.from('weeks').update({ plan: newPlan }).eq('id', weekId);
     if (error) {
       alert('Ошибка обновления плана: ' + error.message);
+    } else {
+      fetchWeeks(false); // Refetch to get latest data
     }
   };
   
@@ -92,17 +93,24 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
         }
 
         if (taskFound) {
+            // Optimistic update
             setWeeks(currentWeeks => currentWeeks.map(w => w.id === weekId ? { ...w, plan: newPlan } : w));
-            await handleUpdatePlan(weekId, newPlan);
+            // Persist change
+            const { error } = await supabase.from('weeks').update({ plan: newPlan }).eq('id', weekId);
+            if(error) {
+                alert("Ошибка синхронизации: " + error.message);
+                fetchWeeks(false); // Revert if error
+            }
         }
     };
 
-  const handleAddWeek = async (title: string, startDate: string, endDate: string, plan: Plan) => {
+  const handleAddWeek = async (title: string, description: string, startDate: string, endDate: string, plan: Plan) => {
       if (!user) return;
       const { error } = await supabase.from('weeks').insert({
           project_id: project.id,
           user_id: user.id,
           title,
+          description,
           start_date: startDate,
           end_date: endDate,
           status: 'draft',
@@ -110,6 +118,8 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
       });
       if (error) {
           alert("Ошибка добавления этапа: " + error.message);
+      } else {
+        fetchWeeks(false);
       }
   }
 
@@ -118,6 +128,8 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
       const { error } = await supabase.from('weeks').delete().eq('id', weekToDelete.id);
       if (error) {
           alert('Ошибка удаления: ' + error.message);
+      } else {
+        fetchWeeks(false);
       }
       setWeekToDelete(null);
   }
@@ -143,11 +155,6 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
           <button onClick={() => setIsShareModalOpen(true)} className="p-2 btn-secondary"><FaShareAlt/></button>
         </div>
       </div>
-
-      <div className="mb-6 bg-white p-6 rounded-lg shadow-md">
-        <h1 className="text-3xl font-bold text-gray-800">{project.name}</h1>
-        <p className="text-gray-600 mt-2">{project.description}</p>
-      </div>
       
       {isAuditor && (
         <div className="flex justify-end mb-6">
@@ -167,6 +174,7 @@ const AuditView: React.FC<AuditViewProps> = ({ project, user, onBack }) => {
                 onUpdatePlan={(plan) => handleUpdatePlan(week.id, plan)}
                 onTaskSelect={(item) => setSelectedTaskForDetail({item, weekId: week.id, projectId: project.id})}
                 onDeleteRequest={() => setWeekToDelete(week)}
+                onUpdateRequest={() => fetchWeeks(false)}
                 onGenerateReport={() => handleOpenReport(week)}
             />
           ))}

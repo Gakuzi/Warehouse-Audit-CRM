@@ -30,6 +30,17 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
     });
 };
 
+const sanitizeFileName = (fileName: string) => {
+    const parts = fileName.split('.');
+    const extension = parts.length > 1 ? '.' + parts.pop() : '';
+    const name = parts.join('.');
+    const cleanedName = name
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .substring(0, 100);
+    return cleanedName + extension;
+};
+
 
 const InterviewActionBar: React.FC<InterviewActionBarProps> = ({ user, context, events, onNewEvent }) => {
     const [loading, setLoading] = useState<string | null>(null); // To track specific loading actions
@@ -80,7 +91,8 @@ const InterviewActionBar: React.FC<InterviewActionBarProps> = ({ user, context, 
         setLoading('upload');
         try {
              const audioFile = file instanceof File ? file : new File([file], fileName || `recording-${Date.now()}.webm`, { type: file.type });
-             const filePath = `${user.id}/${context.item.id}/${Date.now()}-${audioFile.name}`;
+             const sanitizedFileName = sanitizeFileName(audioFile.name);
+             const filePath = `${user.id}/${context.item.id}/${Date.now()}-${sanitizedFileName}`;
              const { error: uploadError } = await supabase.storage.from('audit-files').upload(filePath, audioFile);
              if (uploadError) throw uploadError;
 
@@ -107,6 +119,7 @@ const InterviewActionBar: React.FC<InterviewActionBarProps> = ({ user, context, 
 
         setLoading(`analyze-${audioEvent.id}`);
         try {
+            // Using a proxy to bypass potential CORS issues with Supabase Storage if RLS is strict
             const response = await fetch(audioFile.url);
             const blob = await response.blob();
             const base64Data = await blobToBase64(blob);

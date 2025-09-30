@@ -18,6 +18,17 @@ interface AddEventModalProps {
 
 type EventStepType = 'meeting' | 'interview' | 'documentation_review';
 
+const sanitizeFileName = (fileName: string) => {
+    const parts = fileName.split('.');
+    const extension = parts.length > 1 ? '.' + parts.pop() : '';
+    const name = parts.join('.');
+    const cleanedName = name
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .substring(0, 100);
+    return cleanedName + extension;
+};
+
 const AddEventModal: React.FC<AddEventModalProps> = ({ isOpen, onClose, user, context, onNewEvent }) => {
     const [step, setStep] = useState<'select' | 'form'>('select');
     const [eventType, setEventType] = useState<EventStepType | null>(null);
@@ -63,12 +74,13 @@ const AddEventModal: React.FC<AddEventModalProps> = ({ isOpen, onClose, user, co
         const filesArray = filesToUpload instanceof Blob ? [new File([filesToUpload], `interview-recording-${Date.now()}.webm`, { type: filesToUpload.type })] : Array.from(filesToUpload);
         
         const uploadPromises = filesArray.map(async file => {
-            const filePath = `${user.id}/${context.taskId}/${Date.now()}-${file.name}`;
+            const sanitizedFileName = sanitizeFileName(file.name);
+            const filePath = `${user.id}/${context.taskId}/${Date.now()}-${sanitizedFileName}`;
             const { error: uploadError } = await supabase.storage.from('audit-files').upload(filePath, file);
             if (uploadError) throw uploadError;
             
             const { data } = supabase.storage.from('audit-files').getPublicUrl(filePath);
-            return { name: file.name, url: data.publicUrl };
+            return { name: file.name, url: data.publicUrl, type: file.type };
         });
 
         return Promise.all(uploadPromises);

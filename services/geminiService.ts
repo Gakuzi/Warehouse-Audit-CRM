@@ -1,9 +1,49 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { Project, Week, Event } from '../types';
+import { Project, Week, Event, Plan } from '../types';
 
 // Fix: Initialize the GoogleGenAI client according to the new guidelines.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+const dailyPlanSchema = {
+    type: Type.OBJECT,
+    description: "Daily plan where keys are dates in 'YYYY-MM-DD' format and values are objects containing an array of tasks.",
+    patternProperties: {
+        '^\\d{4}-\\d{2}-\\d{2}$': { // Regex for YYYY-MM-DD
+            type: Type.OBJECT,
+            properties: {
+                tasks: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            id: { type: Type.STRING, description: "Leave empty, will be populated by the client" },
+                            content: { type: Type.STRING },
+                            completed: { type: Type.BOOLEAN },
+                            type: { type: Type.STRING },
+                            data: {
+                                type: Type.OBJECT,
+                                description: "Optional data for specific task types like meetings or interviews. All properties are optional.",
+                                properties: {
+                                    time: { type: Type.STRING, description: "Time in HH:MM format" },
+                                    location: { type: Type.STRING },
+                                    agenda: { type: Type.STRING },
+                                    participants: { 
+                                        type: Type.ARRAY,
+                                        items: { type: Type.STRING }
+                                    },
+                                    interviewee: { type: Type.STRING }
+                                }
+                            }
+                        },
+                        required: ['id', 'content', 'completed', 'type']
+                    }
+                }
+            },
+            required: ['tasks']
+        }
+    }
+};
+
 
 export const generateAuditPlan = async (
   projectName: string,
@@ -12,7 +52,7 @@ export const generateAuditPlan = async (
   endDate: string,
   durationInWeeks: number,
   approvalPeriod: string
-): Promise<{ weeks: { title: string, plan: any, start_date: string, end_date: string }[] }> => {
+): Promise<{ weeks: { title: string, description: string, plan: any, start_date: string, end_date: string }[] }> => {
 
   const prompt = `
     Создай детальный план аудита для проекта.
@@ -23,19 +63,17 @@ export const generateAuditPlan = async (
     Период отчетности: ${approvalPeriod === 'weekly' ? 'Еженедельно' : 'Ежемесячно'}.
 
     План должен быть разбит на ${durationInWeeks} этапов (недель).
-    Для каждого этапа (недели) придумай краткое, емкое название (например, "Этап 1: Сбор и анализ документации").
-    Для каждого этапа (недели) определи точные даты начала и окончания, исходя из общей продолжительности и даты начала проекта. Первая неделя начинается ${startDate}. Каждая неделя длится 7 дней.
-    Для каждого этапа (недели) составь ежедневный план задач. План должен быть в формате JSON объекта, где ключи - это даты в формате 'YYYY-MM-DD', а значения - это объекты с ключом 'tasks', содержащим массив задач на этот день.
-    Задачи должны быть конкретными действиями, которые должен выполнить аудитор.
-    Типы задач могут быть: 'task' (общая задача), 'meeting' (встреча), 'interview' (интервью), 'doc_review' (анализ документов), 'observation' (наблюдение).
-    Для задач типа 'meeting' или 'interview' можно добавить поля 'time', 'location', 'agenda', 'participants', 'interviewee' в объект 'data'.
-    Генерируй план на 5 рабочих дней в неделю (понедельник-пятница).
-    Пример структуры задачи: { "id": "uuid", "content": "Запросить уставные документы", "completed": false, "type": "task" }
+    Для каждого этапа (недели) придумай краткое, емкое название (например, "Этап 1: Сбор и анализ документации") и подробное описание целей этого этапа.
+    Для каждого этапа (недели) определи точные даты начала и окончания. Первая неделя начинается ${startDate}. Каждая неделя длится 7 дней.
+    Для каждого этапа (недели) составь ежедневный план задач на 5 рабочих дней (ПН-ПТ). План должен быть в формате JSON объекта, где ключи - это даты в формате 'YYYY-MM-DD', а значения - это объекты с ключом 'tasks', содержащим массив задач на этот день.
     
-    Верни результат в формате JSON.
+    Внутри каждой задачи ОБЯЗАТЕЛЬНО должны быть поля: "id" (оставь его пустым, будет заполнено программно), "content" (описание задачи), "completed": false, "type" (один из: 'task', 'meeting', 'interview', 'doc_review', 'observation').
+    Для задач типа 'meeting' ОБЯЗАТЕЛЬНО добавь объект 'data' с полями 'time' (HH:MM), 'location' (например, 'Переговорная №1' или 'Онлайн'), 'agenda' (краткая повестка), и 'participants' (массив строк с именами или должностями).
+    Для задач типа 'interview' ОБЯЗАТЕЛЬНО добавь объект 'data' с полями 'time' (HH:MM) и 'interviewee' (должность или ФИО опрашиваемого).
+    
+    Верни результат в формате JSON, соответствующем предоставленной схеме.
   `;
   
-  // Fix: Defined a response schema to ensure structured JSON output from the model.
   const responseSchema = {
     type: Type.OBJECT,
     properties: {
@@ -49,6 +87,10 @@ export const generateAuditPlan = async (
               type: Type.STRING,
               description: 'Название этапа (недели).',
             },
+            description: {
+                type: Type.STRING,
+                description: 'Подробное описание целей и задач этапа.'
+            },
             start_date: {
                 type: Type.STRING,
                 description: 'Дата начала недели в формате YYYY-MM-DD.'
@@ -57,41 +99,36 @@ export const generateAuditPlan = async (
                 type: Type.STRING,
                 description: 'Дата окончания недели в формате YYYY-MM-DD.'
             },
-            plan: {
-              type: Type.OBJECT,
-              description: 'Ежедневный план задач. Ключ - дата в формате YYYY-MM-DD.',
-            },
+            plan: dailyPlanSchema,
           },
-          required: ['title', 'plan', 'start_date', 'end_date'],
+          required: ['title', 'description', 'plan', 'start_date', 'end_date'],
         },
       },
     },
     required: ['weeks'],
   };
 
-  // Fix: Used the recommended ai.models.generateContent method.
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: prompt,
     config: {
+      systemInstruction: "You are an expert AI assistant for business auditors. Your task is to generate a comprehensive audit plan in JSON format based on the user's request. Strictly adhere to the provided JSON schema.",
       responseMimeType: 'application/json',
       responseSchema: responseSchema,
     },
   });
   
   try {
-    // Fix: Extracted text directly from the `response.text` property.
     const jsonText = response.text.trim();
     const parsed = JSON.parse(jsonText);
     
-    // Fix: Post-process the response to ensure all tasks have a valid client-generated UUID,
-    // as the model may not generate them reliably.
     parsed.weeks.forEach((week: any) => {
         if (week.plan) {
             Object.values(week.plan).forEach((day: any) => {
                 if (day.tasks && Array.isArray(day.tasks)) {
                     day.tasks.forEach((task: any) => {
                         task.id = crypto.randomUUID();
+                        task.completed = false; // Ensure default state
                     });
                 }
             });
@@ -221,3 +258,87 @@ export const generateComprehensiveReport = async (week: Week, project: Project, 
 
     return response.text;
 }
+
+export const generateStageDescription = async (
+  prompt: string,
+): Promise<string> => {
+  const fullPrompt = `
+    Ты — эксперт по бизнес-аудиту. Помоги аудитору сформулировать детальное, ясное и полное описание целей и задач для этапа аудита.
+    Задавай уточняющие вопросы, если первоначальный запрос слишком общий.
+    Твоя цель — создать текст, который будет исчерпывающе описывать, что должно быть сделано на этом этапе.
+    
+    Запрос аудитора: "${prompt}"
+
+    Сгенерируй развернутое описание.
+  `;
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: fullPrompt,
+    config: {
+        systemInstruction: "You are an expert business auditor. Your task is to help a user flesh out the goals and objectives for a stage of their audit. Ask clarifying questions if needed to produce a comprehensive and professional description. The output should be only the description text, without any conversational fluff."
+    }
+  });
+
+  return response.text;
+};
+
+export const generateStagePlan = async (
+  title: string,
+  description: string,
+  startDate: string,
+  endDate: string
+): Promise<Plan> => {
+  const prompt = `
+    Основываясь на данных этапа аудита, создай подробный ежедневный план работы для аудитора.
+
+    **Название этапа:** "${title}"
+    **Период проведения:** с ${startDate} по ${endDate}
+    **Ключевые цели и задачи этапа:** "${description}"
+
+    **Твоя задача:**
+    1.  Создать JSON-объект, представляющий план.
+    2.  Ключами этого объекта должны быть все дни в указанном диапазоне дат (с ${startDate} по ${endDate} включительно) в формате 'YYYY-MM-DD'.
+    3.  Значением для каждого ключа-даты должен быть объект вида \`{ "tasks": [] }\`.
+    4.  Наполни массив \`tasks\` для каждого дня 2-4 конкретными задачами, которые логически вытекают из целей этапа.
+    5.  Внутри каждой задачи ОБЯЗАТЕЛЬНО должны быть поля: "id" (оставь пустым, будет заполнено программно), "content", "completed": false, и "type" (один из: 'task', 'meeting', 'interview', 'doc_review', 'observation').
+    6.  Для задач типа 'meeting' ОБЯЗАТЕЛЬНО добавь объект 'data' с полями 'time' (HH:MM), 'location', 'agenda', 'participants' (массив строк).
+    7.  Для задач типа 'interview' ОБЯЗАТЕЛЬНО добавь объект 'data' с полями 'time' (HH:MM) и 'interviewee'.
+    8.  Задачи должны быть четкими, выполнимыми и релевантными целям этапа.
+    9.  Распредели задачи равномерно и логично по всему периоду.
+
+    Верни только JSON-объект без каких-либо дополнительных пояснений или markdown-форматирования.
+  `;
+  
+  const responseSchema = dailyPlanSchema;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: prompt,
+    config: {
+      systemInstruction: "You are an expert AI assistant for business auditors. Your task is to generate a detailed daily plan for a single audit stage in JSON format. Strictly adhere to the user's instructions and the provided schema.",
+      responseMimeType: 'application/json',
+      responseSchema: responseSchema,
+    },
+  });
+
+  try {
+    const jsonText = response.text.trim();
+    const parsedPlan = JSON.parse(jsonText);
+
+    // Ensure all tasks have a valid client-generated UUID
+    Object.values(parsedPlan).forEach((day: any) => {
+        if (day.tasks && Array.isArray(day.tasks)) {
+            day.tasks.forEach((task: any) => {
+                task.id = crypto.randomUUID();
+                task.completed = false; // Ensure default state
+            });
+        }
+    });
+
+    return parsedPlan as Plan;
+  } catch (e) {
+    console.error("Failed to parse Gemini plan response:", e);
+    console.error("Raw response:", response.text);
+    throw new Error("Не удалось сгенерировать план этапа. Ответ от AI имел неверный формат.");
+  }
+};

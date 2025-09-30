@@ -1,6 +1,7 @@
 import React from 'react';
 import { Event } from '../types';
 import { FaRegComment, FaVideo, FaFileAlt, FaMicrophone, FaReply, FaUserFriends, FaClock, FaTrash } from 'react-icons/fa';
+import ReactMarkdown from 'react-markdown';
 
 interface EventItemProps {
   event: Event;
@@ -122,12 +123,16 @@ const EventItem: React.FC<EventItemProps> = ({ event, onReply, onQuoteClick, onD
                         className="mt-2 p-2 border-l-4 border-gray-300 bg-gray-100 text-sm text-gray-600 hover:bg-gray-200 cursor-pointer rounded"
                      >
                         <p className="font-semibold">{event.parent.author_email}</p>
-                        <div className="prose prose-sm max-w-none line-clamp-2" dangerouslySetInnerHTML={{ __html: event.parent.content }} />
+                        <div className="prose prose-sm max-w-none line-clamp-2">
+                           <ReactMarkdown>{event.parent.content}</ReactMarkdown>
+                        </div>
                      </div>
                 )}
 
                 {event.content && (
-                    <div className="mt-2 text-sm text-gray-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: event.content?.replace(/\n/g, '<br />') }} />
+                    <div className="mt-2 text-sm text-gray-800 prose prose-sm max-w-none">
+                       <ReactMarkdown>{event.content}</ReactMarkdown>
+                    </div>
                 )}
                 
                 {renderEventDetails()}

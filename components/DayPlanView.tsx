@@ -1,4 +1,6 @@
 
+
+
 import React, { useState } from 'react';
 import { Week, Plan, PlanItem } from '../types';
 import { FaPlus, FaTrash } from 'react-icons/fa';
@@ -23,8 +25,8 @@ const DayPlanView: React.FC<DayPlanViewProps> = ({ week, onUpdatePlan, onTaskSel
     
     // Determine if the plan can be modified (add, edit, delete tasks)
     const canEditPlan = isAuditor && week.status === 'draft';
-    // Determine if new tasks can be added (e.g., in draft or approved states)
-    const canAddTask = isAuditor && (week.status === 'draft' || week.status === 'approved');
+    // Determine if new tasks can be added (e.g., in draft, pending, or approved states)
+    const canAddTask = isAuditor && (week.status === 'draft' || week.status === 'approved' || week.status === 'pending_approval');
 
 
     const handleAddTaskClick = (date: string) => {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { PlanItem } from '../types';
 import { FaRegCommentDots, FaTasks, FaCalendarCheck, FaUsers, FaFileContract, FaBinoculars, FaClock, FaEdit, FaTrash, FaWhatsapp, FaTelegramPlane, FaUser } from 'react-icons/fa';
+import ReactMarkdown from 'react-markdown';
 
 interface PlanItemCardProps {
   item: PlanItem;
@@ -72,8 +73,14 @@ const PlanItemCard: React.FC<PlanItemCardProps> = ({ item, onSelect, onEdit, onD
       <div className="flex justify-between items-start gap-2">
         <div className="flex-shrink-0 mt-1">{getIcon()}</div>
         <div className="flex-1 pr-6">
-            <p className="text-sm text-gray-800 ">{item.content}</p>
-            {item.data?.agenda && <p className="text-xs text-gray-500 mt-1 italic">Повестка: {item.data.agenda}</p>}
+            <div className="text-sm text-gray-800 prose prose-sm max-w-none">
+                <ReactMarkdown>{item.content}</ReactMarkdown>
+            </div>
+            {item.data?.agenda && 
+                <div className="text-xs text-gray-500 mt-1 italic prose prose-xs max-w-none">
+                    <ReactMarkdown children={`**Повестка:** ${item.data.agenda}`} />
+                </div>
+            }
             
             {(item.type === 'meeting' || item.type === 'interview') && item.data?.time && (
                 <div className="flex items-center text-xs text-gray-500 mt-1">

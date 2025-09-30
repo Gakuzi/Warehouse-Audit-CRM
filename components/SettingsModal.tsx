@@ -20,6 +20,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, project,
     const [description, setDescription] = useState('');
     const [approvalPeriod, setApprovalPeriod] = useState<ApprovalPeriod>('weekly');
     const [loading, setLoading] = useState(false);
+    const [statusText, setStatusText] = useState('');
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -29,11 +30,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, project,
             setApprovalPeriod(project.approval_period);
         }
     }, [project]);
+    
+     const handleClose = () => {
+        setError('');
+        setStatusText('');
+        setLoading(false);
+        onClose();
+    }
 
     const handleUpdateSettings = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setStatusText('Сохранение настроек...');
         const { error } = await supabase
             .from('projects')
             .update({ name, description, approval_period: approvalPeriod })
@@ -43,18 +52,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, project,
             setError('Ошибка сохранения: ' + error.message);
         } else {
             onProjectUpdate();
-            onClose();
+            handleClose();
         }
         setLoading(false);
+        setStatusText('');
     };
 
     const handleRegeneratePlan = async () => {
-        if (!window.confirm('Вы уверены? Это действие удалит все существующие недели и задачи и создаст новый план. Это действие необратимо.')) {
+        if (!window.confirm('Вы уверены? Это действие удалит все существующие недели и задачи и создаст новый план на основе данных из этой формы. Это действие необратимо.')) {
             return;
         }
         setLoading(true);
         setError('');
         try {
+            setStatusText('Удаление старого плана...');
             // 1. Delete all existing weeks for the project
             const { error: deleteError } = await supabase.from('weeks').delete().eq('project_id', project.id);
             if(deleteError) throw deleteError;
@@ -68,60 +79,72 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, project,
              const durationInDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
              const durationInWeeks = Math.ceil(durationInDays / 7);
 
-            const generatedData = await generateAuditPlan(project.name, project.description, project.start_date, project.end_date || '', durationInWeeks, project.approval_period);
+            setStatusText('Генерация нового плана с помощью AI...');
+            const generatedData = await generateAuditPlan(name, description, project.start_date, project.end_date || '', durationInWeeks, approvalPeriod);
 
             // 3. Insert new weeks
             const weeksToInsert = generatedData.weeks.map((week: any) => ({
                 project_id: project.id,
                 user_id: project.user_id,
                 title: week.title,
+                description: week.description, // Added description
                 plan: week.plan,
                 status: 'draft',
+                start_date: week.start_date,
+                end_date: week.end_date,
             }));
 
+            setStatusText('Сохранение нового плана...');
             const { error: weeksError } = await supabase.from('weeks').insert(weeksToInsert);
             if (weeksError) throw weeksError;
 
             onProjectUpdate();
-            onClose();
+            handleClose();
 
         } catch (err: any) {
             setError('Ошибка пересоздания плана: ' + err.message);
         } finally {
             setLoading(false);
+            setStatusText('');
         }
     };
 
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Настройки проекта">
+        <Modal isOpen={isOpen} onClose={handleClose} title="Настройки проекта">
             <form onSubmit={handleUpdateSettings} className="space-y-4">
                  {error && <p className="text-red-600 bg-red-100 p-3 rounded-md text-sm">{error}</p>}
+                 {loading && statusText && (
+                    <div className="text-center p-4 bg-blue-50 text-blue-700 rounded-md flex items-center justify-center gap-3">
+                        <Spinner size="sm" />
+                        <p className="text-sm font-medium">{statusText}</p>
+                    </div>
+                )}
                 <div>
                     <label htmlFor="projectNameSettings" className="block text-sm font-medium text-gray-700">Название проекта</label>
-                    <input id="projectNameSettings" type="text" value={name} onChange={e => setName(e.target.value)} className="w-full mt-1 input" required />
+                    <input id="projectNameSettings" type="text" value={name} onChange={e => setName(e.target.value)} className="w-full mt-1 input" required disabled={loading} />
                 </div>
                 <div>
                     <label htmlFor="projectDescSettings" className="block text-sm font-medium text-gray-700">Описание / Цели</label>
-                    <textarea id="projectDescSettings" value={description} onChange={e => setDescription(e.target.value)} className="w-full mt-1 input" rows={3} required />
+                    <textarea id="projectDescSettings" value={description} onChange={e => setDescription(e.target.value)} className="w-full mt-1 input" rows={3} required disabled={loading} />
                 </div>
                 <div>
                     <label htmlFor="approvalPeriodSettings" className="block text-sm font-medium text-gray-700">Период отчетности</label>
-                    <select id="approvalPeriodSettings" value={approvalPeriod} onChange={e => setApprovalPeriod(e.target.value as ApprovalPeriod)} className="w-full mt-1 input bg-white">
+                    <select id="approvalPeriodSettings" value={approvalPeriod} onChange={e => setApprovalPeriod(e.target.value as ApprovalPeriod)} className="w-full mt-1 input bg-white" disabled={loading}>
                         <option value="weekly">Еженедельно</option>
                         <option value="monthly">Ежемесячно</option>
                     </select>
                 </div>
                 <div className="pt-2 flex justify-end">
-                    <button type="button" onClick={onClose} className="mr-2 py-2 px-4 btn-secondary">Отмена</button>
-                    <button type="submit" disabled={loading} className="py-2 px-4 btn-primary">
+                    <button type="button" onClick={handleClose} className="mr-2 py-2 px-4 btn-secondary" disabled={loading}>Отмена</button>
+                    <button type="submit" disabled={loading} className="py-2 px-4 btn-primary w-28">
                         {loading ? <Spinner size="sm" /> : 'Сохранить'}
                     </button>
                 </div>
             </form>
              <div className="mt-6 pt-4 border-t border-red-200">
                 <h4 className="text-md font-bold text-red-700">Опасная зона</h4>
-                <p className="text-sm text-gray-600 mt-1">Это действие полностью заменит текущий план новым, сгенерированным AI.</p>
+                <p className="text-sm text-gray-600 mt-1">Это действие полностью заменит текущий план новым, сгенерированным AI на основе данных из формы выше.</p>
                 <button
                     onClick={handleRegeneratePlan}
                     disabled={loading}

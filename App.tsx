@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
 import { User } from '@supabase/supabase-js';
@@ -10,12 +8,13 @@ import AuditView from './components/AuditView';
 import LoginModal from './components/LoginModal';
 import ProfileModal from './components/ProfileModal';
 // Fix: Use relative path for type import.
-import { Project } from './types';
+import { Project, CompanyProfile } from './types';
 
 function App() {
   const [session, setSession] = useState<any>(null);
   const [user, setUser] = useState<User | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -42,19 +41,40 @@ function App() {
     const handleHashChange = async () => {
         const hash = window.location.hash.replace('#/', '');
         if (hash) {
-            const { data, error } = await supabase
+            const projectPromise = supabase
                 .from('projects')
                 .select('*')
                 .eq('id', hash)
                 .single();
-            if (data) {
-                setSelectedProject(data);
+            
+            const profilePromise = supabase
+                .from('company_profiles')
+                .select('*')
+                .eq('project_id', hash)
+                .single();
+
+            const [projectResult, profileResult] = await Promise.all([projectPromise, profilePromise]);
+
+            if (projectResult.data) {
+                setSelectedProject(projectResult.data);
             } else {
-                console.error('Project not found:', error);
+                // 'PGRST116' is the code for "No rows found", which is expected if the hash is invalid.
+                // We only want to log other, unexpected errors.
+                if (projectResult.error && projectResult.error.code !== 'PGRST116') {
+                    console.error('Project not found error:', projectResult.error.message);
+                }
                 window.location.hash = ''; // Clear hash if project not found
             }
+            
+            if (profileResult.data) {
+                setCompanyProfile(profileResult.data);
+            } else {
+                setCompanyProfile(null); // Reset if no profile found for the project
+            }
+
         } else {
             setSelectedProject(null);
+            setCompanyProfile(null);
         }
     };
 
@@ -78,21 +98,26 @@ function App() {
       setIsProfileModalOpen(false);
       handleBackToDashboard();
   };
+  
+  const isAuditor = !!user && !!selectedProject && user.id === selectedProject.user_id;
 
   return (
     <div className="bg-gray-100 min-h-screen">
       <Header 
         user={user} 
+        project={selectedProject}
+        companyProfile={companyProfile}
+        isAuditor={isAuditor}
         onLogin={() => setIsLoginModalOpen(true)}
         onProfile={() => setIsProfileModalOpen(true)}
-        auditorId={selectedProject?.user_id}
       />
       <main className="container mx-auto p-4 md:p-6">
         {selectedProject ? (
           <AuditView 
             project={selectedProject} 
             user={user} 
-            onBack={handleBackToDashboard} 
+            onBack={handleBackToDashboard}
+            isAuditor={isAuditor}
           />
         ) : (
           <Dashboard user={user} onSelectProject={handleSelectProject} />

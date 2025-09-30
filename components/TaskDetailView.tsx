@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
@@ -10,6 +9,7 @@ import { FaTimes } from 'react-icons/fa';
 import AddEventModal from './AddEventModal';
 import InterviewActionBar from './InterviewActionBar';
 import ConfirmationModal from './ConfirmationModal';
+import ReactMarkdown from 'react-markdown';
 
 
 interface TaskDetailViewProps {
@@ -130,7 +130,9 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({ isOpen, onClose, user, 
                 <header className="flex justify-between items-center p-4 border-b">
                     <div>
                         <h2 className="text-xl font-bold text-gray-800">Обсуждение задачи</h2>
-                        <p className="text-gray-600">{context.item.content}</p>
+                        <div className="text-gray-600 prose prose-sm max-w-none">
+                            <ReactMarkdown>{context.item.content}</ReactMarkdown>
+                        </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-gray-500 hover:text-gray-800 rounded-full hover:bg-gray-100">
                         <FaTimes size={20} />
